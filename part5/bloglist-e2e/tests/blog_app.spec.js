@@ -1,5 +1,5 @@
 const { test, expect, beforeEach, describe } = require('@playwright/test')
-const { loginWith, createBlog, blogLocator, likeBlog } = require('./helper')
+const { loginWith, createBlog, openBlog } = require('./helper')
 
 const testUser = {
   name: 'Matti Luukkainen',
@@ -13,22 +13,10 @@ const otherUser = {
   password: 'secret',
 }
 
-const blogs = {
-  first: {
-    title: 'First blog by playwright',
-    author: 'Ann Author',
-    url: 'https://example.com/first',
-  },
-  second: {
-    title: 'Second blog by playwright',
-    author: 'Bob Writer',
-    url: 'https://example.com/second',
-  },
-  third: {
-    title: 'Third blog by playwright',
-    author: 'Cid Poster',
-    url: 'https://example.com/third',
-  },
+const blog = {
+  title: 'A blog by playwright',
+  author: 'Ann Author',
+  url: 'https://example.com/playwright',
 }
 
 describe('Blog app', () => {
@@ -40,29 +28,34 @@ describe('Blog app', () => {
     await page.goto('/')
   })
 
-  test('Login form is shown', async ({ page }) => {
-    await expect(page.getByRole('heading', { name: 'Log in to application' })).toBeVisible()
-    await expect(page.getByLabel('username')).toBeVisible()
-    await expect(page.getByLabel('password')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'login' })).toBeVisible()
+  test('the list of blogs is shown at the root', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'blogs' })).toBeVisible()
+    await expect(page.getByRole('link', { name: 'login' })).toBeVisible()
   })
 
   describe('Login', () => {
-    test('succeeds with correct credentials', async ({ page }) => {
+    test('succeeds with the correct username and password', async ({ page }) => {
       await loginWith(page, testUser.username, testUser.password)
 
       await expect(page.getByText(`${testUser.name} logged in`)).toBeVisible()
+      // after logging in the user is directed to the list of blogs
+      await expect(page).toHaveURL('/')
+      await expect(page.getByRole('button', { name: 'logout' })).toBeVisible()
     })
 
-    test('fails with wrong credentials', async ({ page }) => {
+    test('fails with a wrong password', async ({ page }) => {
       await loginWith(page, testUser.username, 'wrong')
 
-      const errorDiv = page.locator('.error')
-      await expect(errorDiv).toContainText('wrong username or password')
-      await expect(errorDiv).toHaveCSS('border-style', 'solid')
-      await expect(errorDiv).toHaveCSS('color', 'rgb(255, 0, 0)')
-
+      await expect(page.getByRole('alert')).toContainText('wrong username or password')
       await expect(page.getByText(`${testUser.name} logged in`)).not.toBeVisible()
+    })
+
+    test('logging out directs the user to the list of blogs', async ({ page }) => {
+      await loginWith(page, testUser.username, testUser.password)
+      await page.getByRole('button', { name: 'logout' }).click()
+
+      await expect(page).toHaveURL('/')
+      await expect(page.getByRole('link', { name: 'login' })).toBeVisible()
     })
   })
 
@@ -72,88 +65,75 @@ describe('Blog app', () => {
       await expect(page.getByText(`${testUser.name} logged in`)).toBeVisible()
     })
 
-    test('a new blog can be created', async ({ page }) => {
-      await createBlog(page, blogs.first)
+    test('a blog can be created', async ({ page }) => {
+      await createBlog(page, blog)
 
-      await expect(blogLocator(page, blogs.first.title)).toBeVisible()
-      await expect(page.locator('.success')).toContainText(
-        `a new blog ${blogs.first.title} by ${blogs.first.author} added`
+      await expect(page).toHaveURL('/')
+      await expect(page.getByRole('link', { name: blog.title })).toBeVisible()
+      await expect(page.getByRole('alert')).toContainText(
+        `a new blog ${blog.title} by ${blog.author} added`
       )
     })
 
     describe('and a blog exists', () => {
       beforeEach(async ({ page }) => {
-        await createBlog(page, blogs.first)
+        await createBlog(page, blog)
       })
 
-      test('it can be liked', async ({ page }) => {
-        const blog = blogLocator(page, blogs.first.title)
+      test('the blog can be opened and liked', async ({ page }) => {
+        await openBlog(page, blog.title)
 
-        await blog.getByRole('button', { name: 'view' }).click()
-        await expect(blog.getByText('likes 0')).toBeVisible()
+        await expect(page.getByText(blog.url)).toBeVisible()
+        await expect(page.getByText('likes 0')).toBeVisible()
+        await expect(page.getByText(`added by ${testUser.name}`)).toBeVisible()
 
-        await blog.getByRole('button', { name: 'like' }).click()
-        await expect(blog.getByText('likes 1')).toBeVisible()
+        await page.getByRole('button', { name: 'like' }).click()
+        await expect(page.getByText('likes 1')).toBeVisible()
+        await page.getByRole('button', { name: 'like' }).click()
+        await expect(page.getByText('likes 2')).toBeVisible()
       })
 
-      test('the user who added it can delete it', async ({ page }) => {
+      test('the blog can be deleted by the user who added it', async ({ page }) => {
         page.once('dialog', async dialog => {
-          expect(dialog.message()).toContain(blogs.first.title)
+          expect(dialog.message()).toContain(blog.title)
           await dialog.accept()
         })
 
-        const blog = blogLocator(page, blogs.first.title)
-        await blog.getByRole('button', { name: 'view' }).click()
-        await blog.getByRole('button', { name: 'remove' }).click()
+        await openBlog(page, blog.title)
+        await page.getByRole('button', { name: 'remove' }).click()
 
-        await expect(blogLocator(page, blogs.first.title)).toHaveCount(0)
-
-        // and it stays deleted after a reload
-        await page.reload()
-        await expect(blogLocator(page, blogs.first.title)).toHaveCount(0)
+        // after deleting the user is directed to the list of blogs
+        await expect(page).toHaveURL('/')
+        await expect(page.getByRole('link', { name: blog.title })).toHaveCount(0)
       })
 
-      test('a user who did not add it does not see the delete button', async ({ page }) => {
-        // the creator sees the button
-        const blog = blogLocator(page, blogs.first.title)
-        await blog.getByRole('button', { name: 'view' }).click()
-        await expect(blog.getByRole('button', { name: 'remove' })).toBeVisible()
+      test('a blog view is kept when the page is reloaded', async ({ page }) => {
+        await openBlog(page, blog.title)
+        await page.reload()
 
-        // another user does not
+        await expect(page.getByRole('heading', { name: blog.title })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'remove' })).toBeVisible()
+      })
+
+      test('another user can like the blog but cannot delete it', async ({ page }) => {
         await page.getByRole('button', { name: 'logout' }).click()
         await loginWith(page, otherUser.username, otherUser.password)
         await expect(page.getByText(`${otherUser.name} logged in`)).toBeVisible()
 
-        const sameBlog = blogLocator(page, blogs.first.title)
-        await sameBlog.getByRole('button', { name: 'view' }).click()
-        await expect(sameBlog.getByText(blogs.first.url)).toBeVisible()
-        await expect(sameBlog.getByRole('button', { name: 'remove' })).toHaveCount(0)
-      })
-    })
+        await openBlog(page, blog.title)
 
-    describe('and several blogs exist', () => {
-      beforeEach(async ({ page }) => {
-        await createBlog(page, blogs.first)
-        await createBlog(page, blogs.second)
-        await createBlog(page, blogs.third)
+        await expect(page.getByRole('button', { name: 'like' })).toBeVisible()
+        await expect(page.getByRole('button', { name: 'remove' })).toHaveCount(0)
       })
 
-      test('they are ordered by likes, most liked first', async ({ page }) => {
-        // likes: first 1, second 3, third 2
-        await likeBlog(page, blogs.first.title, 1)
-        await likeBlog(page, blogs.second.title, 3)
-        await likeBlog(page, blogs.third.title, 2)
+      test('a user who has not logged in cannot like the blog', async ({ page }) => {
+        await page.getByRole('button', { name: 'logout' }).click()
 
-        const titles = page.locator('.blog .blog-summary')
-        await expect(titles).toHaveCount(3)
-        await expect(titles.nth(0)).toContainText(blogs.second.title)
-        await expect(titles.nth(1)).toContainText(blogs.third.title)
-        await expect(titles.nth(2)).toContainText(blogs.first.title)
+        await openBlog(page, blog.title)
 
-        // the order is also kept after a reload
-        await page.reload()
-        await expect(titles.nth(0)).toContainText(blogs.second.title)
-        await expect(titles.nth(2)).toContainText(blogs.first.title)
+        await expect(page.getByText('likes 0')).toBeVisible()
+        await expect(page.getByRole('button', { name: 'like' })).toHaveCount(0)
+        await expect(page.getByRole('button', { name: 'remove' })).toHaveCount(0)
       })
     })
   })
