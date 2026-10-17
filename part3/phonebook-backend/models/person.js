@@ -13,9 +13,24 @@ mongoose.connect(url, { family: 4 })
     console.log('error connecting to MongoDB:', error.message)
   })
 
+// two or three digits, a dash and then more digits, e.g. 09-1234556 or 040-22334455
+const phoneNumberFormat = /^\d{2,3}-\d+$/
+
 const personSchema = new mongoose.Schema({
-  name: String,
-  number: String,
+  name: {
+    type: String,
+    minLength: 3,
+    required: true,
+  },
+  number: {
+    type: String,
+    minLength: 8,
+    required: true,
+    validate: {
+      validator: (value) => phoneNumberFormat.test(value),
+      message: props => `${props.value} is not a valid phone number`,
+    },
+  },
 })
 
 personSchema.set('toJSON', {
