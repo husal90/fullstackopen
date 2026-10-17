@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Blog from './components/Blog'
 import LoginForm from './components/LoginForm'
 import BlogForm from './components/BlogForm'
 import Notification from './components/Notification'
+import Togglable from './components/Togglable'
 import blogService from './services/blogs'
 import loginService from './services/login'
 
@@ -14,6 +15,8 @@ const App = () => {
   const [password, setPassword] = useState('')
   const [user, setUser] = useState(null)
   const [notification, setNotification] = useState(null)
+
+  const blogFormRef = useRef()
 
   useEffect(() => {
     const fetchBlogs = async () => {
@@ -67,12 +70,43 @@ const App = () => {
     try {
       const createdBlog = await blogService.create(blogObject)
 
-      setBlogs(blogs.concat({ ...createdBlog, user: { username: user.username, name: user.name } }))
+      setBlogs(blogs.concat(createdBlog))
+      blogFormRef.current.toggleVisibility()
       notify(`a new blog ${createdBlog.title} by ${createdBlog.author} added`)
       return true
     } catch (error) {
       notify(error.response?.data?.error ?? 'creating the blog failed', 'error')
       return false
+    }
+  }
+
+  const likeBlog = async (blog) => {
+    try {
+      const updatedBlog = await blogService.update(blog.id, {
+        user: blog.user.id,
+        likes: blog.likes + 1,
+        author: blog.author,
+        title: blog.title,
+        url: blog.url,
+      })
+
+      setBlogs(blogs.map(b => b.id === blog.id ? updatedBlog : b))
+    } catch (error) {
+      notify(error.response?.data?.error ?? 'liking the blog failed', 'error')
+    }
+  }
+
+  const removeBlog = async (blog) => {
+    if (!window.confirm(`Remove blog ${blog.title} by ${blog.author}?`)) {
+      return
+    }
+
+    try {
+      await blogService.remove(blog.id)
+      setBlogs(blogs.filter(b => b.id !== blog.id))
+      notify(`blog ${blog.title} removed`)
+    } catch (error) {
+      notify(error.response?.data?.error ?? 'removing the blog failed', 'error')
     }
   }
 
@@ -91,6 +125,8 @@ const App = () => {
     )
   }
 
+  const blogsByLikes = blogs.toSorted((a, b) => b.likes - a.likes)
+
   return (
     <div>
       <h2>blogs</h2>
@@ -102,10 +138,18 @@ const App = () => {
         <button onClick={handleLogout}>logout</button>
       </p>
 
-      <BlogForm createBlog={createBlog} />
+      <Togglable buttonLabel="create new blog" ref={blogFormRef}>
+        <BlogForm createBlog={createBlog} />
+      </Togglable>
 
-      {blogs.map(blog =>
-        <Blog key={blog.id} blog={blog} />
+      {blogsByLikes.map(blog =>
+        <Blog
+          key={blog.id}
+          blog={blog}
+          likeBlog={likeBlog}
+          removeBlog={removeBlog}
+          canRemove={blog.user?.username === user.username}
+        />
       )}
     </div>
   )

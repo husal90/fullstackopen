@@ -113,7 +113,8 @@ describe('when there are initially some blogs saved', () => {
         .expect(201)
 
       const root = await User.findOne({ username: 'root' })
-      assert.strictEqual(response.body.user, root._id.toString())
+      assert.strictEqual(response.body.user.username, 'root')
+      assert.strictEqual(response.body.user.id, root._id.toString())
       assert(root.blogs.map(id => id.toString()).includes(response.body.id))
     })
 
@@ -252,6 +253,7 @@ describe('when there are initially some blogs saved', () => {
         .expect('Content-Type', /application\/json/)
 
       assert.strictEqual(response.body.likes, blogToUpdate.likes + 10)
+      assert.strictEqual(response.body.user.username, 'root')
 
       const blogsAtEnd = await helper.blogsInDb()
       const updated = blogsAtEnd.find(blog => blog.id === blogToUpdate.id)
