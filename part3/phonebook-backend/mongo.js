@@ -1,9 +1,15 @@
+require('dotenv').config()
 const mongoose = require('mongoose')
 
-// Host of your MongoDB Atlas cluster, e.g. cluster0.a5qfl.mongodb.net
-// (copy it from the connection string shown in Atlas). The password is NOT
-// stored here: it is given as the first command-line argument.
-const CLUSTER_HOST = 'your-cluster.mongodb.net'
+// The Atlas cluster host and the database username come from the (git-ignored)
+// .env file. The password is NOT stored anywhere: it is the first command-line argument.
+const CLUSTER_HOST = process.env.MONGODB_HOST
+const USERNAME = process.env.MONGODB_USERNAME
+
+if (!CLUSTER_HOST || !USERNAME) {
+  console.log('set MONGODB_HOST and MONGODB_USERNAME in .env (see .env.example)')
+  process.exit(1)
+}
 
 if (process.argv.length < 3) {
   console.log('give password as argument')
@@ -11,7 +17,7 @@ if (process.argv.length < 3) {
 }
 
 const password = encodeURIComponent(process.argv[2])
-const url = `mongodb+srv://fullstack:${password}@${CLUSTER_HOST}/phonebookApp?retryWrites=true&w=majority&appName=Cluster0`
+const url = `mongodb+srv://${USERNAME}:${password}@${CLUSTER_HOST}/phonebookApp?retryWrites=true&w=majority&appName=Cluster0`
 
 mongoose.set('strictQuery', false)
 mongoose.connect(url, { family: 4 })
